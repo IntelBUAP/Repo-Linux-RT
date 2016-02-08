@@ -1,2 +1,2 @@
 # Repo-Linux-RT
-Un repo con las versiones empaquetadas en RPM del kernel RT que hicimos en clase.
+El arbol de directorios de kernel 4.1.15 con el parche de RT.
