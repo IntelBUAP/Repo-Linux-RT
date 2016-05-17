@@ -29,7 +29,12 @@
  */
 void pcibios_release_device(struct pci_dev *dev)
 {
+	struct pci_controller *phb = pci_bus_to_host(dev->bus);
+
 	eeh_remove_device(dev);
+
+	if (phb->controller_ops.release_device)
+		phb->controller_ops.release_device(dev);
 }
 
 /**
@@ -50,7 +55,7 @@ void pcibios_remove_pci_devices(struct pci_bus *bus)
 
 	pr_debug("PCI: Removing devices on bus %04x:%02x\n",
 		 pci_domain_nr(bus),  bus->number);
-	list_for_each_entry_safe(dev, tmp, &bus->devices, bus_list) {
+	list_for_each_entry_safe_reverse(dev, tmp, &bus->devices, bus_list) {
 		pr_debug("   Removing %s...\n", pci_name(dev));
 		pci_stop_and_remove_bus_device(dev);
 	}

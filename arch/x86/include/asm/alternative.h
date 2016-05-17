@@ -52,6 +52,12 @@ struct alt_instr {
 	u8  padlen;		/* length of build-time padding */
 } __packed;
 
+/*
+ * Debug flag that can be tested to see whether alternative
+ * instructions were patched in already:
+ */
+extern int alternatives_patched;
+
 extern void alternative_instructions(void);
 extern void apply_alternatives(struct alt_instr *start, struct alt_instr *end);
 
@@ -144,12 +150,6 @@ static inline int alternatives_text_reserved(void *start, void *end)
 	ALTINSTR_REPLACEMENT(newinstr1, feature1, 1)			\
 	ALTINSTR_REPLACEMENT(newinstr2, feature2, 2)			\
 	".popsection"
-
-/*
- * This must be included *after* the definition of ALTERNATIVE due to
- * <asm/arch_hweight.h>
- */
-#include <asm/cpufeature.h>
 
 /*
  * Alternative instructions for different CPU types or capabilities.

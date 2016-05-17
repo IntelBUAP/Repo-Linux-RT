@@ -17,6 +17,7 @@
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/mutex.h>
+#include <linux/cpufeature.h>
 #include <linux/random.h>
 #include <linux/slab.h>
 #include <asm/debug.h>
@@ -668,11 +669,13 @@ static const struct file_operations prng_tdes_fops = {
 static struct miscdevice prng_sha512_dev = {
 	.name	= "prandom",
 	.minor	= MISC_DYNAMIC_MINOR,
+	.mode	= 0644,
 	.fops	= &prng_sha512_fops,
 };
 static struct miscdevice prng_tdes_dev = {
 	.name	= "prandom",
 	.minor	= MISC_DYNAMIC_MINOR,
+	.mode	= 0644,
 	.fops	= &prng_tdes_fops,
 };
 
@@ -914,6 +917,5 @@ static void __exit prng_exit(void)
 	}
 }
 
-
-module_init(prng_init);
+module_cpu_feature_match(MSA, prng_init);
 module_exit(prng_exit);

@@ -114,13 +114,6 @@ config M68VZ328
 	help
 	  Motorola 68VZ328 processor support.
 
-config M68360
-	bool "MC68360"
-	depends on !MMU
-	select MCPU32
-	help
-	  Motorola 68360 processor support.
-
 endif # M68KCLASSIC
 
 if COLDFIRE
@@ -427,6 +420,14 @@ config HAVE_IPSBAR
 
 config CLOCK_FREQ
 	int "Set the core clock frequency"
+	default "25000000" if M5206
+	default "54000000" if M5206e
+	default "166666666" if M520x
+	default "140000000" if M5249
+	default "150000000" if M527x || M523x
+	default "90000000" if M5307
+	default "50000000" if M5407
+	default "266000000" if M54xx
 	default "66666666"
 	depends on COLDFIRE
 	help

@@ -9,7 +9,6 @@
 #include <linux/pci.h>
 #include <linux/mutex.h>
 #include <asm-generic/pci.h>
-#include <asm-generic/pci-dma-compat.h>
 #include <asm/pci_clp.h>
 #include <asm/pci_debug.h>
 
@@ -45,7 +44,8 @@ struct zpci_fmb {
 	u64 rpcit_ops;
 	u64 dma_rbytes;
 	u64 dma_wbytes;
-} __packed __aligned(16);
+	u64 pad[2];
+} __packed __aligned(128);
 
 enum zpci_state {
 	ZPCI_FN_STATE_RESERVED,
@@ -62,9 +62,10 @@ struct zpci_bar_struct {
 	u8		size;		/* order 2 exponent */
 };
 
+struct s390_domain;
+
 /* Private data per function */
 struct zpci_dev {
-	struct pci_dev	*pdev;
 	struct pci_bus	*bus;
 	struct list_head entry;		/* list of all zpci_devices, needed for hotplug, etc. */
 
@@ -118,6 +119,8 @@ struct zpci_dev {
 
 	struct dentry	*debugfs_dev;
 	struct dentry	*debugfs_perf;
+
+	struct s390_domain *s390_domain; /* s390 IOMMU domain data */
 };
 
 static inline bool zdev_enabled(struct zpci_dev *zdev)
@@ -170,7 +173,11 @@ static inline void zpci_exit_slot(struct zpci_dev *zdev) {}
 #endif /* CONFIG_HOTPLUG_PCI_S390 */
 
 /* Helpers */
-struct zpci_dev *get_zdev(struct pci_dev *);
+static inline struct zpci_dev *to_zpci(struct pci_dev *pdev)
+{
+	return pdev->sysdata;
+}
+
 struct zpci_dev *get_zdev_by_fid(u32);
 
 /* DMA */
@@ -184,8 +191,24 @@ int zpci_fmb_disable_device(struct zpci_dev *);
 /* Debug */
 int zpci_debug_init(void);
 void zpci_debug_exit(void);
-void zpci_debug_init_device(struct zpci_dev *);
+void zpci_debug_init_device(struct zpci_dev *, const char *);
 void zpci_debug_exit_device(struct zpci_dev *);
 void zpci_debug_info(struct zpci_dev *, struct seq_file *);
+
+#ifdef CONFIG_NUMA
+
+/* Returns the node based on PCI bus */
+static inline int __pcibus_to_node(const struct pci_bus *bus)
+{
+	return NUMA_NO_NODE;
+}
+
+static inline const struct cpumask *
+cpumask_of_pcibus(const struct pci_bus *bus)
+{
+	return cpu_online_mask;
+}
+
+#endif /* CONFIG_NUMA */
 
 #endif
