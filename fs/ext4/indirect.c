@@ -22,6 +22,7 @@
 
 #include "ext4_jbd2.h"
 #include "truncate.h"
+#include <linux/dax.h>
 #include <linux/uio.h>
 
 #include <trace/events/ext4.h>
@@ -554,18 +555,32 @@ int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 		goto got_it;
 	}
 
-	/* Next simple case - plain lookup or failed read of indirect block */
-	if ((flags & EXT4_GET_BLOCKS_CREATE) == 0 || err == -EIO)
+	/* Next simple case - plain lookup failed */
+	if ((flags & EXT4_GET_BLOCKS_CREATE) == 0) {
+		unsigned epb = inode->i_sb->s_blocksize / sizeof(u32);
+		int i;
+
+		/* Count number blocks in a subtree under 'partial' */
+		count = 1;
+		for (i = 0; partial + i != chain + depth - 1; i++)
+			count *= epb;
+		/* Fill in size of a hole we found */
+		map->m_pblk = 0;
+		map->m_len = min_t(unsigned int, map->m_len, count);
+		goto cleanup;
+	}
+
+	/* Failed read of indirect block */
+	if (err == -EIO)
 		goto cleanup;
 
 	/*
 	 * Okay, we need to do block allocation.
 	*/
-	if (EXT4_HAS_RO_COMPAT_FEATURE(inode->i_sb,
-				       EXT4_FEATURE_RO_COMPAT_BIGALLOC)) {
+	if (ext4_has_feature_bigalloc(inode->i_sb)) {
 		EXT4_ERROR_INODE(inode, "Can't allocate blocks for "
 				 "non-extent mapped inodes with bigalloc");
-		return -EUCLEAN;
+		return -EFSCORRUPTED;
 	}
 
 	/* Set up for the direct block allocation */
@@ -576,6 +591,8 @@ int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 		ar.flags = EXT4_MB_HINT_DATA;
 	if (flags & EXT4_GET_BLOCKS_DELALLOC_RESERVE)
 		ar.flags |= EXT4_MB_DELALLOC_RESERVED;
+	if (flags & EXT4_GET_BLOCKS_METADATA_NOFAIL)
+		ar.flags |= EXT4_MB_USE_RESERVED;
 
 	ar.goal = ext4_find_goal(inode, map->m_lblk, partial);
 
@@ -691,21 +708,21 @@ retry:
 		}
 		if (IS_DAX(inode))
 			ret = dax_do_io(iocb, inode, iter, offset,
-					ext4_get_block, NULL, 0);
+					ext4_dio_get_block, NULL, 0);
 		else
 			ret = __blockdev_direct_IO(iocb, inode,
 						   inode->i_sb->s_bdev, iter,
-						   offset, ext4_get_block, NULL,
-						   NULL, 0);
+						   offset, ext4_dio_get_block,
+						   NULL, NULL, 0);
 		inode_dio_end(inode);
 	} else {
 locked:
 		if (IS_DAX(inode))
 			ret = dax_do_io(iocb, inode, iter, offset,
-					ext4_get_block, NULL, DIO_LOCKING);
+					ext4_dio_get_block, NULL, DIO_LOCKING);
 		else
 			ret = blockdev_direct_IO(iocb, inode, iter, offset,
-						 ext4_get_block);
+						 ext4_dio_get_block);
 
 		if (unlikely(iov_iter_rw(iter) == WRITE && ret < 0)) {
 			loff_t isize = i_size_read(inode);

@@ -21,6 +21,7 @@
 #include "xattr.h"
 #include <linux/init.h>
 #include <linux/blkdev.h>
+#include <linux/backing-dev.h>
 #include <linux/buffer_head.h>
 #include <linux/exportfs.h>
 #include <linux/quotaops.h>
@@ -287,7 +288,7 @@ static int finish_unfinished(struct super_block *s)
 		pathrelse(&path);
 
 		inode = reiserfs_iget(s, &obj_key);
-		if (!inode) {
+		if (IS_ERR_OR_NULL(inode)) {
 			/*
 			 * the unlink almost completed, it just did not
 			 * manage to remove "save" link and release objectid
@@ -588,8 +589,7 @@ static struct kmem_cache *reiserfs_inode_cachep;
 static struct inode *reiserfs_alloc_inode(struct super_block *sb)
 {
 	struct reiserfs_inode_info *ei;
-	ei = (struct reiserfs_inode_info *)
-	    kmem_cache_alloc(reiserfs_inode_cachep, GFP_KERNEL);
+	ei = kmem_cache_alloc(reiserfs_inode_cachep, GFP_KERNEL);
 	if (!ei)
 		return NULL;
 	atomic_set(&ei->openers, 0);
@@ -626,7 +626,8 @@ static int __init init_inodecache(void)
 						  sizeof(struct
 							 reiserfs_inode_info),
 						  0, (SLAB_RECLAIM_ACCOUNT|
-							SLAB_MEM_SPREAD),
+						      SLAB_MEM_SPREAD|
+						      SLAB_ACCOUNT),
 						  init_once);
 	if (reiserfs_inode_cachep == NULL)
 		return -ENOMEM;
@@ -801,6 +802,7 @@ static const struct dquot_operations reiserfs_quota_operations = {
 	.write_info = reiserfs_write_info,
 	.alloc_dquot	= dquot_alloc,
 	.destroy_dquot	= dquot_destroy,
+	.get_next_id	= dquot_get_next_id,
 };
 
 static const struct quotactl_ops reiserfs_qctl_operations = {
