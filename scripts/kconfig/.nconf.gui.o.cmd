@@ -1,4 +1,4 @@
-cmd_scripts/kconfig/nconf.gui.o := gcc -Wp,-MD,scripts/kconfig/.nconf.gui.o.d -Wall -Wmissing-prototypes -Wstrict-prototypes -O2 -fomit-frame-pointer -std=gnu89    -DCURSES_LOC="<ncurses.h>" -DNCURSES_WIDECHAR=1 -DLOCALE   -c -o scripts/kconfig/nconf.gui.o scripts/kconfig/nconf.gui.c
+cmd_scripts/kconfig/nconf.gui.o := gcc -Wp,-MD,scripts/kconfig/.nconf.gui.o.d -Wall -Wmissing-prototypes -Wstrict-prototypes -O2 -fomit-frame-pointer -std=gnu89   -D_GNU_SOURCE -DCURSES_LOC="<ncurses.h>" -DNCURSES_WIDECHAR=1 -DLOCALE   -c -o scripts/kconfig/nconf.gui.o scripts/kconfig/nconf.gui.c
 
 source_scripts/kconfig/nconf.gui.o := scripts/kconfig/nconf.gui.c
 
@@ -27,27 +27,30 @@ deps_scripts/kconfig/nconf.gui.o := \
   /usr/include/fcntl.h \
   /usr/include/bits/fcntl.h \
   /usr/include/bits/fcntl-linux.h \
-  /usr/include/time.h \
-  /usr/include/bits/stat.h \
-  /usr/lib/gcc/x86_64-redhat-linux/5.3.1/include/limits.h \
-  /usr/lib/gcc/x86_64-redhat-linux/5.3.1/include/syslimits.h \
-  /usr/include/limits.h \
-  /usr/include/bits/posix1_lim.h \
-  /usr/include/bits/local_lim.h \
-  /usr/include/linux/limits.h \
-  /usr/include/bits/posix2_lim.h \
-  /usr/lib/gcc/x86_64-redhat-linux/5.3.1/include/stdarg.h \
-  /usr/include/stdlib.h \
-  /usr/lib/gcc/x86_64-redhat-linux/5.3.1/include/stddef.h \
-  /usr/include/bits/waitflags.h \
-  /usr/include/bits/waitstatus.h \
+  /usr/include/bits/uio.h \
   /usr/include/sys/types.h \
+  /usr/include/time.h \
+  /usr/lib/gcc/x86_64-redhat-linux/6.1.1/include/stddef.h \
   /usr/include/sys/select.h \
   /usr/include/bits/select.h \
   /usr/include/bits/sigset.h \
   /usr/include/bits/time.h \
   /usr/include/sys/sysmacros.h \
   /usr/include/bits/pthreadtypes.h \
+  /usr/include/bits/stat.h \
+  /usr/lib/gcc/x86_64-redhat-linux/6.1.1/include/limits.h \
+  /usr/lib/gcc/x86_64-redhat-linux/6.1.1/include/syslimits.h \
+  /usr/include/limits.h \
+  /usr/include/bits/posix1_lim.h \
+  /usr/include/bits/local_lim.h \
+  /usr/include/linux/limits.h \
+  /usr/include/bits/posix2_lim.h \
+  /usr/include/bits/xopen_lim.h \
+  /usr/include/bits/stdio_lim.h \
+  /usr/lib/gcc/x86_64-redhat-linux/6.1.1/include/stdarg.h \
+  /usr/include/stdlib.h \
+  /usr/include/bits/waitflags.h \
+  /usr/include/bits/waitstatus.h \
   /usr/include/alloca.h \
   /usr/include/bits/stdlib-bsearch.h \
   /usr/include/bits/stdlib-float.h \
@@ -63,22 +66,22 @@ deps_scripts/kconfig/nconf.gui.o := \
   /usr/include/bits/locale.h \
   /usr/include/curses.h \
   /usr/include/ncurses_dll.h \
-  /usr/lib/gcc/x86_64-redhat-linux/5.3.1/include/stdint.h \
+  /usr/lib/gcc/x86_64-redhat-linux/6.1.1/include/stdint.h \
   /usr/include/stdint.h \
   /usr/include/bits/wchar.h \
   /usr/include/stdio.h \
   /usr/include/libio.h \
   /usr/include/_G_config.h \
   /usr/include/wchar.h \
-  /usr/include/bits/stdio_lim.h \
   /usr/include/bits/sys_errlist.h \
   /usr/include/bits/stdio.h \
-  /usr/lib/gcc/x86_64-redhat-linux/5.3.1/include/stdbool.h \
+  /usr/lib/gcc/x86_64-redhat-linux/6.1.1/include/stdbool.h \
   /usr/include/unctrl.h \
   /usr/include/menu.h \
   /usr/include/eti.h \
   /usr/include/panel.h \
   /usr/include/form.h \
+  /usr/include/bits/timex.h \
   /usr/include/sys/time.h \
   /usr/include/curses.h \
 

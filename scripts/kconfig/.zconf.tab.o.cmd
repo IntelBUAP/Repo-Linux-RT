@@ -1,4 +1,4 @@
-cmd_scripts/kconfig/zconf.tab.o := gcc -Wp,-MD,scripts/kconfig/.zconf.tab.o.d -Wall -Wmissing-prototypes -Wstrict-prototypes -O2 -fomit-frame-pointer -std=gnu89    -DCURSES_LOC="<ncurses.h>" -DNCURSES_WIDECHAR=1 -DLOCALE  -Iscripts/kconfig -c -o scripts/kconfig/zconf.tab.o scripts/kconfig/zconf.tab.c
+cmd_scripts/kconfig/zconf.tab.o := gcc -Wp,-MD,scripts/kconfig/.zconf.tab.o.d -Wall -Wmissing-prototypes -Wstrict-prototypes -O2 -fomit-frame-pointer -std=gnu89   -D_GNU_SOURCE -DCURSES_LOC="<ncurses.h>" -DNCURSES_WIDECHAR=1 -DLOCALE  -Iscripts/kconfig -c -o scripts/kconfig/zconf.tab.o scripts/kconfig/zconf.tab.c
 
 source_scripts/kconfig/zconf.tab.o := scripts/kconfig/zconf.tab.c
 
@@ -17,9 +17,9 @@ deps_scripts/kconfig/zconf.tab.o := \
   /usr/include/bits/byteswap.h \
   /usr/include/bits/byteswap-16.h \
   /usr/include/xlocale.h \
-  /usr/lib/gcc/x86_64-redhat-linux/5.3.1/include/stdarg.h \
+  /usr/lib/gcc/x86_64-redhat-linux/6.1.1/include/stdarg.h \
   /usr/include/stdio.h \
-  /usr/lib/gcc/x86_64-redhat-linux/5.3.1/include/stddef.h \
+  /usr/lib/gcc/x86_64-redhat-linux/6.1.1/include/stddef.h \
   /usr/include/libio.h \
   /usr/include/_G_config.h \
   /usr/include/wchar.h \
@@ -43,7 +43,7 @@ deps_scripts/kconfig/zconf.tab.o := \
   /usr/include/string.h \
   /usr/include/bits/string.h \
   /usr/include/bits/string2.h \
-  /usr/lib/gcc/x86_64-redhat-linux/5.3.1/include/stdbool.h \
+  /usr/lib/gcc/x86_64-redhat-linux/6.1.1/include/stdbool.h \
   scripts/kconfig/lkc.h \
     $(wildcard include/config/.h) \
     $(wildcard include/config/prefix.h) \
@@ -65,13 +65,14 @@ deps_scripts/kconfig/zconf.tab.o := \
   /usr/include/asm/errno.h \
   /usr/include/asm-generic/errno.h \
   /usr/include/asm-generic/errno-base.h \
-  /usr/lib/gcc/x86_64-redhat-linux/5.3.1/include/limits.h \
-  /usr/lib/gcc/x86_64-redhat-linux/5.3.1/include/syslimits.h \
+  /usr/lib/gcc/x86_64-redhat-linux/6.1.1/include/limits.h \
+  /usr/lib/gcc/x86_64-redhat-linux/6.1.1/include/syslimits.h \
   /usr/include/limits.h \
   /usr/include/bits/posix1_lim.h \
   /usr/include/bits/local_lim.h \
   /usr/include/linux/limits.h \
   /usr/include/bits/posix2_lim.h \
+  /usr/include/bits/xopen_lim.h \
   /usr/include/unistd.h \
   /usr/include/bits/posix_opt.h \
   /usr/include/bits/environments.h \
@@ -89,6 +90,8 @@ deps_scripts/kconfig/zconf.tab.o := \
   /usr/include/fcntl.h \
   /usr/include/bits/fcntl.h \
   /usr/include/bits/fcntl-linux.h \
+  /usr/include/bits/uio.h \
+  /usr/include/bits/timex.h \
   scripts/kconfig/expr.c \
   scripts/kconfig/symbol.c \
   /usr/include/regex.h \
