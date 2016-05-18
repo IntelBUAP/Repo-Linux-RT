@@ -161,6 +161,7 @@ nft_target_set_tgchk_param(struct xt_tgchk_param *par,
 		par->hook_mask = 0;
 	}
 	par->family	= ctx->afi->family;
+	par->nft_compat = true;
 }
 
 static void target_compat_from_user(struct xt_target *t, void *in, void *out)
@@ -377,6 +378,7 @@ nft_match_set_mtchk_param(struct xt_mtchk_param *par, const struct nft_ctx *ctx,
 		par->hook_mask = 0;
 	}
 	par->family	= ctx->afi->family;
+	par->nft_compat = true;
 }
 
 static void match_compat_from_user(struct xt_match *m, void *in, void *out)
@@ -517,9 +519,9 @@ nla_put_failure:
 	return -1;
 }
 
-static int
-nfnl_compat_get(struct sock *nfnl, struct sk_buff *skb,
-		const struct nlmsghdr *nlh, const struct nlattr * const tb[])
+static int nfnl_compat_get(struct net *net, struct sock *nfnl,
+			   struct sk_buff *skb, const struct nlmsghdr *nlh,
+			   const struct nlattr * const tb[])
 {
 	int ret = 0, target;
 	struct nfgenmsg *nfmsg;
@@ -658,6 +660,9 @@ nft_match_select_ops(const struct nft_ctx *ctx,
 	if (IS_ERR(match))
 		return ERR_PTR(-ENOENT);
 
+	if (match->matchsize > nla_len(tb[NFTA_MATCH_INFO]))
+		return ERR_PTR(-EINVAL);
+
 	/* This is the first time we use this match, allocate operations */
 	nft_match = kzalloc(sizeof(struct nft_xt), GFP_KERNEL);
 	if (nft_match == NULL)
@@ -737,6 +742,9 @@ nft_target_select_ops(const struct nft_ctx *ctx,
 	target = xt_request_find_target(family, tg_name, rev);
 	if (IS_ERR(target))
 		return ERR_PTR(-ENOENT);
+
+	if (target->targetsize > nla_len(tb[NFTA_TARGET_INFO]))
+		return ERR_PTR(-EINVAL);
 
 	/* This is the first time we use this target, allocate operations */
 	nft_target = kzalloc(sizeof(struct nft_xt), GFP_KERNEL);

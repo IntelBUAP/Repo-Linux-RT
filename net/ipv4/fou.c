@@ -24,6 +24,7 @@ struct fou {
 	u16 type;
 	struct udp_offload udp_offloads;
 	struct list_head list;
+	struct rcu_head rcu;
 };
 
 #define FOU_F_REMCSUM_NOPARTIAL BIT(0)
@@ -47,7 +48,7 @@ static inline struct fou *fou_from_sock(struct sock *sk)
 	return sk->sk_user_data;
 }
 
-static void fou_recv_pull(struct sk_buff *skb, size_t len)
+static int fou_recv_pull(struct sk_buff *skb, size_t len)
 {
 	struct iphdr *iph = ip_hdr(skb);
 
@@ -58,6 +59,7 @@ static void fou_recv_pull(struct sk_buff *skb, size_t len)
 	__skb_pull(skb, len);
 	skb_postpull_rcsum(skb, udp_hdr(skb), len);
 	skb_reset_transport_header(skb);
+	return iptunnel_pull_offloads(skb);
 }
 
 static int fou_udp_recv(struct sock *sk, struct sk_buff *skb)
@@ -67,9 +69,14 @@ static int fou_udp_recv(struct sock *sk, struct sk_buff *skb)
 	if (!fou)
 		return 1;
 
-	fou_recv_pull(skb, sizeof(struct udphdr));
+	if (fou_recv_pull(skb, sizeof(struct udphdr)))
+		goto drop;
 
 	return -fou->protocol;
+
+drop:
+	kfree_skb(skb);
+	return 0;
 }
 
 static struct guehdr *gue_remcsum(struct sk_buff *skb, struct guehdr *guehdr,
@@ -79,7 +86,11 @@ static struct guehdr *gue_remcsum(struct sk_buff *skb, struct guehdr *guehdr,
 	__be16 *pd = data;
 	size_t start = ntohs(pd[0]);
 	size_t offset = ntohs(pd[1]);
-	size_t plen = hdrlen + max_t(size_t, offset + sizeof(u16), start);
+	size_t plen = sizeof(struct udphdr) + hdrlen +
+	    max_t(size_t, offset + sizeof(u16), start);
+
+	if (skb->remcsum_offload)
+		return guehdr;
 
 	if (!pskb_may_pull(skb, plen))
 		return NULL;
@@ -165,6 +176,9 @@ static int gue_udp_recv(struct sock *sk, struct sk_buff *skb)
 	__skb_pull(skb, sizeof(struct udphdr) + hdrlen);
 	skb_reset_transport_header(skb);
 
+	if (iptunnel_pull_offloads(skb))
+		goto drop;
+
 	return -guehdr->proto_ctype;
 
 drop:
@@ -180,6 +194,17 @@ static struct sk_buff **fou_gro_receive(struct sk_buff **head,
 	struct sk_buff **pp = NULL;
 	u8 proto = NAPI_GRO_CB(skb)->proto;
 	const struct net_offload **offloads;
+
+	/* We can clear the encap_mark for FOU as we are essentially doing
+	 * one of two possible things.  We are either adding an L4 tunnel
+	 * header to the outer L3 tunnel header, or we are are simply
+	 * treating the GRE tunnel header as though it is a UDP protocol
+	 * specific header such as VXLAN or GENEVE.
+	 */
+	NAPI_GRO_CB(skb)->encap_mark = 0;
+
+	/* Flag this frame as already having an outer encap header */
+	NAPI_GRO_CB(skb)->is_fou = 1;
 
 	rcu_read_lock();
 	offloads = NAPI_GRO_CB(skb)->is_ipv6 ? inet6_offloads : inet_offloads;
@@ -221,29 +246,21 @@ out_unlock:
 
 static struct guehdr *gue_gro_remcsum(struct sk_buff *skb, unsigned int off,
 				      struct guehdr *guehdr, void *data,
-				      size_t hdrlen, u8 ipproto,
-				      struct gro_remcsum *grc, bool nopartial)
+				      size_t hdrlen, struct gro_remcsum *grc,
+				      bool nopartial)
 {
 	__be16 *pd = data;
 	size_t start = ntohs(pd[0]);
 	size_t offset = ntohs(pd[1]);
-	size_t plen = hdrlen + max_t(size_t, offset + sizeof(u16), start);
 
 	if (skb->remcsum_offload)
-		return NULL;
+		return guehdr;
 
 	if (!NAPI_GRO_CB(skb)->csum_valid)
 		return NULL;
 
-	/* Pull checksum that will be written */
-	if (skb_gro_header_hard(skb, off + plen)) {
-		guehdr = skb_gro_header_slow(skb, off + plen, off);
-		if (!guehdr)
-			return NULL;
-	}
-
-	skb_gro_remcsum_process(skb, (void *)guehdr + hdrlen,
-				start, offset, grc, nopartial);
+	guehdr = skb_gro_remcsum_process(skb, (void *)guehdr, off, hdrlen,
+					 start, offset, grc, nopartial);
 
 	skb->remcsum_offload = 1;
 
@@ -307,10 +324,10 @@ static struct sk_buff **gue_gro_receive(struct sk_buff **head,
 
 		if (flags & GUE_PFLAG_REMCSUM) {
 			guehdr = gue_gro_remcsum(skb, off, guehdr,
-						 data + doffset, hdrlen,
-						 guehdr->proto_ctype, &grc,
+						 data + doffset, hdrlen, &grc,
 						 !!(fou->flags &
 						    FOU_F_REMCSUM_NOPARTIAL));
+
 			if (!guehdr)
 				goto out;
 
@@ -321,8 +338,6 @@ static struct sk_buff **gue_gro_receive(struct sk_buff **head,
 	}
 
 	skb_gro_pull(skb, hdrlen);
-
-	flush = 0;
 
 	for (p = *head; p; p = p->next) {
 		const struct guehdr *guehdr2;
@@ -348,13 +363,25 @@ static struct sk_buff **gue_gro_receive(struct sk_buff **head,
 		}
 	}
 
+	/* We can clear the encap_mark for GUE as we are essentially doing
+	 * one of two possible things.  We are either adding an L4 tunnel
+	 * header to the outer L3 tunnel header, or we are are simply
+	 * treating the GRE tunnel header as though it is a UDP protocol
+	 * specific header such as VXLAN or GENEVE.
+	 */
+	NAPI_GRO_CB(skb)->encap_mark = 0;
+
+	/* Flag this frame as already having an outer encap header */
+	NAPI_GRO_CB(skb)->is_fou = 1;
+
 	rcu_read_lock();
 	offloads = NAPI_GRO_CB(skb)->is_ipv6 ? inet6_offloads : inet_offloads;
 	ops = rcu_dereference(offloads[guehdr->proto_ctype]);
-	if (WARN_ON(!ops || !ops->callbacks.gro_receive))
+	if (WARN_ON_ONCE(!ops || !ops->callbacks.gro_receive))
 		goto out_unlock;
 
 	pp = ops->callbacks.gro_receive(head, skb);
+	flush = 0;
 
 out_unlock:
 	rcu_read_unlock();
@@ -421,7 +448,7 @@ static void fou_release(struct fou *fou)
 	list_del(&fou->list);
 	udp_tunnel_sock_release(sock);
 
-	kfree(fou);
+	kfree_rcu(fou, rcu);
 }
 
 static int fou_encap_init(struct sock *sk, struct fou *fou, struct fou_cfg *cfg)
@@ -501,7 +528,7 @@ static int fou_create(struct net *net, struct fou_cfg *cfg,
 	sk->sk_allocation = GFP_ATOMIC;
 
 	if (cfg->udp_config.family == AF_INET) {
-		err = udp_add_offload(&fou->udp_offloads);
+		err = udp_add_offload(net, &fou->udp_offloads);
 		if (err)
 			goto error;
 	}
@@ -570,7 +597,7 @@ static int parse_nl_config(struct genl_info *info,
 	if (info->attrs[FOU_ATTR_AF]) {
 		u8 family = nla_get_u8(info->attrs[FOU_ATTR_AF]);
 
-		if (family != AF_INET && family != AF_INET6)
+		if (family != AF_INET)
 			return -EINVAL;
 
 		cfg->udp_config.family = family;
@@ -777,7 +804,6 @@ static void fou_build_udp(struct sk_buff *skb, struct ip_tunnel_encap *e,
 	uh->dest = e->dport;
 	uh->source = sport;
 	uh->len = htons(skb->len);
-	uh->check = 0;
 	udp_set_csum(!(e->flags & TUNNEL_ENCAP_FLAG_CSUM), skb,
 		     fl4->saddr, fl4->daddr, skb->len);
 
@@ -787,11 +813,11 @@ static void fou_build_udp(struct sk_buff *skb, struct ip_tunnel_encap *e,
 int fou_build_header(struct sk_buff *skb, struct ip_tunnel_encap *e,
 		     u8 *protocol, struct flowi4 *fl4)
 {
-	bool csum = !!(e->flags & TUNNEL_ENCAP_FLAG_CSUM);
-	int type = csum ? SKB_GSO_UDP_TUNNEL_CSUM : SKB_GSO_UDP_TUNNEL;
+	int type = e->flags & TUNNEL_ENCAP_FLAG_CSUM ? SKB_GSO_UDP_TUNNEL_CSUM :
+						       SKB_GSO_UDP_TUNNEL;
 	__be16 sport;
 
-	skb = iptunnel_handle_offloads(skb, csum, type);
+	skb = iptunnel_handle_offloads(skb, type);
 
 	if (IS_ERR(skb))
 		return PTR_ERR(skb);
@@ -807,8 +833,8 @@ EXPORT_SYMBOL(fou_build_header);
 int gue_build_header(struct sk_buff *skb, struct ip_tunnel_encap *e,
 		     u8 *protocol, struct flowi4 *fl4)
 {
-	bool csum = !!(e->flags & TUNNEL_ENCAP_FLAG_CSUM);
-	int type = csum ? SKB_GSO_UDP_TUNNEL_CSUM : SKB_GSO_UDP_TUNNEL;
+	int type = e->flags & TUNNEL_ENCAP_FLAG_CSUM ? SKB_GSO_UDP_TUNNEL_CSUM :
+						       SKB_GSO_UDP_TUNNEL;
 	struct guehdr *guehdr;
 	size_t hdrlen, optlen = 0;
 	__be16 sport;
@@ -817,7 +843,6 @@ int gue_build_header(struct sk_buff *skb, struct ip_tunnel_encap *e,
 
 	if ((e->flags & TUNNEL_ENCAP_FLAG_REMCSUM) &&
 	    skb->ip_summed == CHECKSUM_PARTIAL) {
-		csum = false;
 		optlen += GUE_PLEN_REMCSUM;
 		type |= SKB_GSO_TUNNEL_REMCSUM;
 		need_priv = true;
@@ -825,7 +850,7 @@ int gue_build_header(struct sk_buff *skb, struct ip_tunnel_encap *e,
 
 	optlen += need_priv ? GUE_LEN_PRIV : 0;
 
-	skb = iptunnel_handle_offloads(skb, csum, type);
+	skb = iptunnel_handle_offloads(skb, type);
 
 	if (IS_ERR(skb))
 		return PTR_ERR(skb);
