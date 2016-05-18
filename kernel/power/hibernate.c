@@ -342,6 +342,7 @@ int hibernation_snapshot(int platform_mode)
 	pm_message_t msg;
 	int error;
 
+	pm_suspend_clear_flags();
 	error = platform_begin(platform_mode);
 	if (error)
 		goto Close;
@@ -557,7 +558,7 @@ int hibernation_platform_enter(void)
 
 	error = disable_nonboot_cpus();
 	if (error)
-		goto Platform_finish;
+		goto Enable_cpus;
 
 	local_irq_disable();
 	system_state = SYSTEM_SUSPEND;
@@ -575,6 +576,8 @@ int hibernation_platform_enter(void)
 	syscore_resume();
 	system_state = SYSTEM_RUNNING;
 	local_irq_enable();
+
+ Enable_cpus:
 	enable_nonboot_cpus();
 
  Platform_finish:
@@ -646,6 +649,10 @@ static void power_down(void)
 		cpu_relax();
 }
 
+#ifndef CONFIG_SUSPEND
+bool pm_in_action;
+#endif
+
 /**
  * hibernate - Carry out system hibernation, including saving the image.
  */
@@ -657,6 +664,8 @@ int hibernate(void)
 		pr_debug("PM: Hibernation not available.\n");
 		return -EPERM;
 	}
+
+	pm_in_action = true;
 
 	lock_system_sleep();
 	/* The snapshot device should not be opened while we're running */
@@ -723,6 +732,7 @@ int hibernate(void)
 	atomic_inc(&snapshot_device_available);
  Unlock:
 	unlock_system_sleep();
+	pm_in_action = false;
 	return error;
 }
 
@@ -738,7 +748,7 @@ int hibernate(void)
  * contents of memory is restored from the saved image.
  *
  * If this is successful, control reappears in the restored target kernel in
- * hibernation_snaphot() which returns to hibernate().  Otherwise, the routine
+ * hibernation_snapshot() which returns to hibernate().  Otherwise, the routine
  * attempts to recover gracefully and make the kernel return to the normal mode
  * of operation.
  */
@@ -1163,6 +1173,22 @@ static int __init kaslr_nohibernate_setup(char *str)
 	return nohibernate_setup(str);
 }
 
+static int __init page_poison_nohibernate_setup(char *str)
+{
+#ifdef CONFIG_PAGE_POISONING_ZERO
+	/*
+	 * The zeroing option for page poison skips the checks on alloc.
+	 * since hibernation doesn't save free pages there's no way to
+	 * guarantee the pages will still be zeroed.
+	 */
+	if (!strcmp(str, "on")) {
+		pr_info("Disabling hibernation due to page poisoning\n");
+		return nohibernate_setup(str);
+	}
+#endif
+	return 1;
+}
+
 __setup("noresume", noresume_setup);
 __setup("resume_offset=", resume_offset_setup);
 __setup("resume=", resume_setup);
@@ -1171,3 +1197,4 @@ __setup("resumewait", resumewait_setup);
 __setup("resumedelay=", resumedelay_setup);
 __setup("nohibernate", nohibernate_setup);
 __setup("kaslr", kaslr_nohibernate_setup);
+__setup("page_poison=", page_poison_nohibernate_setup);
