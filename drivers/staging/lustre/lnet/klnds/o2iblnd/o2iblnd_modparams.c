@@ -52,8 +52,10 @@ static int timeout = 50;
 module_param(timeout, int, 0644);
 MODULE_PARM_DESC(timeout, "timeout (seconds)");
 
-/* Number of threads in each scheduler pool which is percpt,
- * we will estimate reasonable value based on CPUs if it's set to zero. */
+/*
+ * Number of threads in each scheduler pool which is percpt,
+ * we will estimate reasonable value based on CPUs if it's set to zero.
+ */
 static int nscheds;
 module_param(nscheds, int, 0444);
 MODULE_PARM_DESC(nscheds, "number of threads in each scheduler pool");
@@ -126,11 +128,6 @@ static int fmr_cache = 1;
 module_param(fmr_cache, int, 0444);
 MODULE_PARM_DESC(fmr_cache, "non-zero to enable FMR caching");
 
-/* NB: this value is shared by all CPTs, it can grow at runtime */
-static int pmr_pool_size = 512;
-module_param(pmr_pool_size, int, 0444);
-MODULE_PARM_DESC(pmr_pool_size, "size of MR cache pmr pool on each CPT");
-
 /*
  * 0: disable failover
  * 1: enable failover if necessary
@@ -139,7 +136,6 @@ MODULE_PARM_DESC(pmr_pool_size, "size of MR cache pmr pool on each CPT");
 static int dev_failover;
 module_param(dev_failover, int, 0444);
 MODULE_PARM_DESC(dev_failover, "HCA failover for bonding (0 off, 1 on, other values reserved)");
-
 
 static int require_privileged_port;
 module_param(require_privileged_port, int, 0644);
@@ -150,30 +146,29 @@ module_param(use_privileged_port, int, 0644);
 MODULE_PARM_DESC(use_privileged_port, "use privileged port when initiating connection");
 
 kib_tunables_t kiblnd_tunables = {
-	.kib_dev_failover	   = &dev_failover,
-	.kib_service		= &service,
-	.kib_cksum		  = &cksum,
-	.kib_timeout		= &timeout,
-	.kib_keepalive	      = &keepalive,
-	.kib_ntx		    = &ntx,
-	.kib_credits		= &credits,
-	.kib_peertxcredits	  = &peer_credits,
-	.kib_peercredits_hiw	= &peer_credits_hiw,
-	.kib_peerrtrcredits	 = &peer_buffer_credits,
-	.kib_peertimeout	    = &peer_timeout,
-	.kib_default_ipif	   = &ipif_name,
-	.kib_retry_count	    = &retry_count,
-	.kib_rnr_retry_count	= &rnr_retry_count,
-	.kib_concurrent_sends       = &concurrent_sends,
-	.kib_ib_mtu		 = &ib_mtu,
-	.kib_map_on_demand	  = &map_on_demand,
-	.kib_fmr_pool_size	  = &fmr_pool_size,
-	.kib_fmr_flush_trigger      = &fmr_flush_trigger,
-	.kib_fmr_cache	      = &fmr_cache,
-	.kib_pmr_pool_size	  = &pmr_pool_size,
-	.kib_require_priv_port      = &require_privileged_port,
-	.kib_use_priv_port	    = &use_privileged_port,
-	.kib_nscheds		    = &nscheds
+	.kib_dev_failover      = &dev_failover,
+	.kib_service           = &service,
+	.kib_cksum             = &cksum,
+	.kib_timeout           = &timeout,
+	.kib_keepalive         = &keepalive,
+	.kib_ntx               = &ntx,
+	.kib_credits           = &credits,
+	.kib_peertxcredits     = &peer_credits,
+	.kib_peercredits_hiw   = &peer_credits_hiw,
+	.kib_peerrtrcredits    = &peer_buffer_credits,
+	.kib_peertimeout       = &peer_timeout,
+	.kib_default_ipif      = &ipif_name,
+	.kib_retry_count       = &retry_count,
+	.kib_rnr_retry_count   = &rnr_retry_count,
+	.kib_concurrent_sends  = &concurrent_sends,
+	.kib_ib_mtu            = &ib_mtu,
+	.kib_map_on_demand     = &map_on_demand,
+	.kib_fmr_pool_size     = &fmr_pool_size,
+	.kib_fmr_flush_trigger = &fmr_flush_trigger,
+	.kib_fmr_cache         = &fmr_cache,
+	.kib_require_priv_port = &require_privileged_port,
+	.kib_use_priv_port     = &use_privileged_port,
+	.kib_nscheds           = &nscheds
 };
 
 int
@@ -207,7 +202,7 @@ kiblnd_tunables_init(void)
 	if (*kiblnd_tunables.kib_map_on_demand == 1)
 		*kiblnd_tunables.kib_map_on_demand = 2; /* don't make sense to create map if only one fragment */
 
-	if (*kiblnd_tunables.kib_concurrent_sends == 0) {
+	if (!*kiblnd_tunables.kib_concurrent_sends) {
 		if (*kiblnd_tunables.kib_map_on_demand > 0 &&
 		    *kiblnd_tunables.kib_map_on_demand <= IBLND_MAX_RDMA_FRAGS / 8)
 			*kiblnd_tunables.kib_concurrent_sends = (*kiblnd_tunables.kib_peertxcredits) * 2;

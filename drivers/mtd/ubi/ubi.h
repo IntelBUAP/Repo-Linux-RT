@@ -49,15 +49,19 @@
 /* UBI name used for character devices, sysfs, etc */
 #define UBI_NAME_STR "ubi"
 
+struct ubi_device;
+
 /* Normal UBI messages */
-#define ubi_msg(ubi, fmt, ...) pr_notice(UBI_NAME_STR "%d: " fmt "\n", \
-					 ubi->ubi_num, ##__VA_ARGS__)
+__printf(2, 3)
+void ubi_msg(const struct ubi_device *ubi, const char *fmt, ...);
+
 /* UBI warning messages */
-#define ubi_warn(ubi, fmt, ...) pr_warn(UBI_NAME_STR "%d warning: %s: " fmt "\n", \
-					ubi->ubi_num, __func__, ##__VA_ARGS__)
+__printf(2, 3)
+void ubi_warn(const struct ubi_device *ubi, const char *fmt, ...);
+
 /* UBI error messages */
-#define ubi_err(ubi, fmt, ...) pr_err(UBI_NAME_STR "%d error: %s: " fmt "\n", \
-				      ubi->ubi_num, __func__, ##__VA_ARGS__)
+__printf(2, 3)
+void ubi_err(const struct ubi_device *ubi, const char *fmt, ...);
 
 /* Background thread name pattern */
 #define UBI_BGT_NAME_PATTERN "ubi_bgt%dd"
@@ -775,7 +779,7 @@ extern struct kmem_cache *ubi_wl_entry_slab;
 extern const struct file_operations ubi_ctrl_cdev_operations;
 extern const struct file_operations ubi_cdev_operations;
 extern const struct file_operations ubi_vol_cdev_operations;
-extern struct class *ubi_class;
+extern struct class ubi_class;
 extern struct mutex ubi_devices_mutex;
 extern struct blocking_notifier_head ubi_notifiers;
 

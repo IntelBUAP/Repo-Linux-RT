@@ -110,6 +110,7 @@ void of_iommu_set_ops(struct device_node *np, struct iommu_ops *ops)
 	if (WARN_ON(!iommu))
 		return;
 
+	of_node_get(np);
 	INIT_LIST_HEAD(&iommu->list);
 	iommu->np = np;
 	iommu->ops = ops;
@@ -141,10 +142,12 @@ struct iommu_ops *of_iommu_configure(struct device *dev,
 	struct iommu_ops *ops = NULL;
 	int idx = 0;
 
-	if (dev_is_pci(dev)) {
-		dev_err(dev, "IOMMU is currently not supported for PCI\n");
+	/*
+	 * We can't do much for PCI devices without knowing how
+	 * device IDs are wired up from the PCI bus to the IOMMU.
+	 */
+	if (dev_is_pci(dev))
 		return NULL;
-	}
 
 	/*
 	 * We don't currently walk up the tree looking for a parent IOMMU.

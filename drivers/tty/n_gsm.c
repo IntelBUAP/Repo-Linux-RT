@@ -161,7 +161,7 @@ struct gsm_dlci {
 	struct net_device *net; /* network interface, if created */
 };
 
-/* DLCI 0, 62/63 are special or reseved see gsmtty_open */
+/* DLCI 0, 62/63 are special or reserved see gsmtty_open */
 
 #define NUM_DLCI		64
 
@@ -1066,7 +1066,7 @@ static void gsm_process_modem(struct tty_struct *tty, struct gsm_dlci *dlci,
 	/* Carrier drop -> hangup */
 	if (tty) {
 		if ((mlines & TIOCM_CD) == 0 && (dlci->modem_rx & TIOCM_CD))
-			if (!(tty->termios.c_cflag & CLOCAL))
+			if (!C_CLOCAL(tty))
 				tty_hangup(tty);
 	}
 	if (brk & 0x01)
@@ -2274,7 +2274,6 @@ static void gsmld_receive_buf(struct tty_struct *tty, const unsigned char *cp,
 	const unsigned char *dp;
 	char *f;
 	int i;
-	char buf[64];
 	char flags = TTY_NORMAL;
 
 	if (debug & 4)
@@ -2296,27 +2295,12 @@ static void gsmld_receive_buf(struct tty_struct *tty, const unsigned char *cp,
 			break;
 		default:
 			WARN_ONCE(1, "%s: unknown flag %d\n",
-			       tty_name(tty, buf), flags);
+			       tty_name(tty), flags);
 			break;
 		}
 	}
 	/* FASYNC if needed ? */
 	/* If clogged call tty_throttle(tty); */
-}
-
-/**
- *	gsmld_chars_in_buffer	-	report available bytes
- *	@tty: tty device
- *
- *	Report the number of characters buffered to be delivered to user
- *	at this instant in time.
- *
- *	Locking: gsm lock
- */
-
-static ssize_t gsmld_chars_in_buffer(struct tty_struct *tty)
-{
-	return 0;
 }
 
 /**
@@ -2713,7 +2697,7 @@ static void gsm_mux_rx_netchar(struct gsm_dlci *dlci,
 	memcpy(skb_put(skb, size), in_buf, size);
 
 	skb->dev = net;
-	skb->protocol = __constant_htons(ETH_P_IP);
+	skb->protocol = htons(ETH_P_IP);
 
 	/* Ship it off to the kernel */
 	netif_rx(skb);
@@ -2831,7 +2815,6 @@ static struct tty_ldisc_ops tty_ldisc_packet = {
 	.open            = gsmld_open,
 	.close           = gsmld_close,
 	.flush_buffer    = gsmld_flush_buffer,
-	.chars_in_buffer = gsmld_chars_in_buffer,
 	.read            = gsmld_read,
 	.write           = gsmld_write,
 	.ioctl           = gsmld_ioctl,
@@ -3133,7 +3116,7 @@ static void gsmtty_throttle(struct tty_struct *tty)
 	struct gsm_dlci *dlci = tty->driver_data;
 	if (dlci->state == DLCI_CLOSED)
 		return;
-	if (tty->termios.c_cflag & CRTSCTS)
+	if (C_CRTSCTS(tty))
 		dlci->modem_tx &= ~TIOCM_DTR;
 	dlci->throttled = 1;
 	/* Send an MSC with DTR cleared */
@@ -3145,7 +3128,7 @@ static void gsmtty_unthrottle(struct tty_struct *tty)
 	struct gsm_dlci *dlci = tty->driver_data;
 	if (dlci->state == DLCI_CLOSED)
 		return;
-	if (tty->termios.c_cflag & CRTSCTS)
+	if (C_CRTSCTS(tty))
 		dlci->modem_tx |= TIOCM_DTR;
 	dlci->throttled = 0;
 	/* Send an MSC with DTR set */

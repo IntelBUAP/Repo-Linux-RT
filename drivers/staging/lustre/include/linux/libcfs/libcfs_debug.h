@@ -50,7 +50,6 @@ extern unsigned int libcfs_stack;
 extern unsigned int libcfs_debug;
 extern unsigned int libcfs_printk;
 extern unsigned int libcfs_console_ratelimit;
-extern unsigned int libcfs_watchdog_ratelimit;
 extern unsigned int libcfs_console_max_delay;
 extern unsigned int libcfs_console_min_delay;
 extern unsigned int libcfs_console_backoff;
@@ -74,6 +73,7 @@ struct ptldebug_header {
 	__u32 ph_mask;
 	__u16 ph_cpu_id;
 	__u16 ph_type;
+	/* time_t overflow in 2106 */
 	__u32 ph_sec;
 	__u64 ph_usec;
 	__u32 ph_stack;
@@ -106,7 +106,7 @@ struct ptldebug_header {
 #define S_LOV		0x00020000
 #define S_LQUOTA	0x00040000
 #define S_OSD		0x00080000
-/* unused */
+#define S_LFSCK		0x00100000
 /* unused */
 /* unused */
 #define S_LMV		0x00800000 /* b_new_cmd */

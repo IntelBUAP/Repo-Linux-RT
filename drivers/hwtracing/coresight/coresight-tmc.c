@@ -1,5 +1,7 @@
 /* Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
+ * Description: CoreSight Trace Memory Controller driver
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
  * only version 2 as published by the Free Software Foundation.
@@ -11,7 +13,6 @@
  */
 
 #include <linux/kernel.h>
-#include <linux/module.h>
 #include <linux/init.h>
 #include <linux/types.h>
 #include <linux/device.h>
@@ -23,7 +24,7 @@
 #include <linux/slab.h>
 #include <linux/dma-mapping.h>
 #include <linux/spinlock.h>
-#include <linux/clk.h>
+#include <linux/pm_runtime.h>
 #include <linux/of.h>
 #include <linux/coresight.h>
 #include <linux/amba/bus.h>
@@ -104,7 +105,6 @@ enum tmc_mem_intf_width {
  * @dev:	the device entity associated to this component.
  * @csdev:	component vitals needed by the framework.
  * @miscdev:	specifics to handle "/dev/xyz.tmc" entry.
- * @clk:	the clock this component is associated to.
  * @spinlock:	only one at a time pls.
  * @read_count:	manages preparation of buffer for reading.
  * @buf:	area of memory where trace data get sent.
@@ -120,13 +120,12 @@ struct tmc_drvdata {
 	struct device		*dev;
 	struct coresight_device	*csdev;
 	struct miscdevice	miscdev;
-	struct clk		*clk;
 	spinlock_t		spinlock;
 	int			read_count;
 	bool			reading;
 	char			*buf;
 	dma_addr_t		paddr;
-	void __iomem		*vaddr;
+	void			*vaddr;
 	u32			size;
 	bool			enable;
 	enum tmc_config_type	config_type;
@@ -242,17 +241,11 @@ static void tmc_etf_enable_hw(struct tmc_drvdata *drvdata)
 
 static int tmc_enable(struct tmc_drvdata *drvdata, enum tmc_mode mode)
 {
-	int ret;
 	unsigned long flags;
-
-	ret = clk_prepare_enable(drvdata->clk);
-	if (ret)
-		return ret;
 
 	spin_lock_irqsave(&drvdata->spinlock, flags);
 	if (drvdata->reading) {
 		spin_unlock_irqrestore(&drvdata->spinlock, flags);
-		clk_disable_unprepare(drvdata->clk);
 		return -EBUSY;
 	}
 
@@ -273,7 +266,7 @@ static int tmc_enable(struct tmc_drvdata *drvdata, enum tmc_mode mode)
 	return 0;
 }
 
-static int tmc_enable_sink(struct coresight_device *csdev)
+static int tmc_enable_sink(struct coresight_device *csdev, u32 mode)
 {
 	struct tmc_drvdata *drvdata = dev_get_drvdata(csdev->dev.parent);
 
@@ -385,8 +378,6 @@ static void tmc_disable(struct tmc_drvdata *drvdata, enum tmc_mode mode)
 out:
 	drvdata->enable = false;
 	spin_unlock_irqrestore(&drvdata->spinlock, flags);
-
-	clk_disable_unprepare(drvdata->clk);
 
 	dev_info(drvdata->dev, "TMC disabled\n");
 }
@@ -568,17 +559,13 @@ static const struct file_operations tmc_fops = {
 static ssize_t status_show(struct device *dev,
 			   struct device_attribute *attr, char *buf)
 {
-	int ret;
 	unsigned long flags;
 	u32 tmc_rsz, tmc_sts, tmc_rrp, tmc_rwp, tmc_trg;
 	u32 tmc_ctl, tmc_ffsr, tmc_ffcr, tmc_mode, tmc_pscr;
 	u32 devid;
 	struct tmc_drvdata *drvdata = dev_get_drvdata(dev->parent);
 
-	ret = clk_prepare_enable(drvdata->clk);
-	if (ret)
-		goto out;
-
+	pm_runtime_get_sync(drvdata->dev);
 	spin_lock_irqsave(&drvdata->spinlock, flags);
 	CS_UNLOCK(drvdata->base);
 
@@ -596,8 +583,7 @@ static ssize_t status_show(struct device *dev,
 
 	CS_LOCK(drvdata->base);
 	spin_unlock_irqrestore(&drvdata->spinlock, flags);
-
-	clk_disable_unprepare(drvdata->clk);
+	pm_runtime_put(drvdata->dev);
 
 	return sprintf(buf,
 		       "Depth:\t\t0x%x\n"
@@ -613,7 +599,7 @@ static ssize_t status_show(struct device *dev,
 		       "DEVID:\t\t0x%x\n",
 			tmc_rsz, tmc_sts, tmc_rrp, tmc_rwp, tmc_trg,
 			tmc_ctl, tmc_ffsr, tmc_ffcr, tmc_mode, tmc_pscr, devid);
-out:
+
 	return -EINVAL;
 }
 static DEVICE_ATTR_RO(status);
@@ -700,11 +686,6 @@ static int tmc_probe(struct amba_device *adev, const struct amba_id *id)
 
 	spin_lock_init(&drvdata->spinlock);
 
-	drvdata->clk = adev->pclk;
-	ret = clk_prepare_enable(drvdata->clk);
-	if (ret)
-		return ret;
-
 	devid = readl_relaxed(drvdata->base + CORESIGHT_DEVID);
 	drvdata->config_type = BMVAL(devid, 6, 7);
 
@@ -719,7 +700,7 @@ static int tmc_probe(struct amba_device *adev, const struct amba_id *id)
 		drvdata->size = readl_relaxed(drvdata->base + TMC_RSZ) * 4;
 	}
 
-	clk_disable_unprepare(drvdata->clk);
+	pm_runtime_put(&adev->dev);
 
 	if (drvdata->config_type == TMC_CONFIG_TYPE_ETR) {
 		drvdata->vaddr = dma_alloc_coherent(dev, drvdata->size,
@@ -781,21 +762,8 @@ err_misc_register:
 err_devm_kzalloc:
 	if (drvdata->config_type == TMC_CONFIG_TYPE_ETR)
 		dma_free_coherent(dev, drvdata->size,
-				&drvdata->paddr, GFP_KERNEL);
+				drvdata->vaddr, drvdata->paddr);
 	return ret;
-}
-
-static int tmc_remove(struct amba_device *adev)
-{
-	struct tmc_drvdata *drvdata = amba_get_drvdata(adev);
-
-	misc_deregister(&drvdata->miscdev);
-	coresight_unregister(drvdata->csdev);
-	if (drvdata->config_type == TMC_CONFIG_TYPE_ETR)
-		dma_free_coherent(drvdata->dev, drvdata->size,
-				  &drvdata->paddr, GFP_KERNEL);
-
-	return 0;
 }
 
 static struct amba_id tmc_ids[] = {
@@ -810,13 +778,9 @@ static struct amba_driver tmc_driver = {
 	.drv = {
 		.name   = "coresight-tmc",
 		.owner  = THIS_MODULE,
+		.suppress_bind_attrs = true,
 	},
 	.probe		= tmc_probe,
-	.remove		= tmc_remove,
 	.id_table	= tmc_ids,
 };
-
-module_amba_driver(tmc_driver);
-
-MODULE_LICENSE("GPL v2");
-MODULE_DESCRIPTION("CoreSight Trace Memory Controller driver");
+builtin_amba_driver(tmc_driver);
