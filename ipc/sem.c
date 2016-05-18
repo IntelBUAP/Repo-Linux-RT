@@ -92,7 +92,14 @@
 /* One semaphore structure for each semaphore in the system. */
 struct sem {
 	int	semval;		/* current value */
-	int	sempid;		/* pid of last operation */
+	/*
+	 * PID of the process that last modified the semaphore. For
+	 * Linux, specifically these are:
+	 *  - semop
+	 *  - semctl, via SETVAL and SETALL.
+	 *  - at task exit when performing undo adjustments (see exit_sem).
+	 */
+	int	sempid;
 	spinlock_t	lock;	/* spinlock for fine-grained semtimedop */
 	struct list_head pending_alter; /* pending single-sop operations */
 					/* that alter the semaphore */
@@ -401,7 +408,7 @@ static inline struct sem_array *sem_obtain_lock(struct ipc_namespace *ns,
 	struct kern_ipc_perm *ipcp;
 	struct sem_array *sma;
 
-	ipcp = ipc_obtain_object(&sem_ids(ns), id);
+	ipcp = ipc_obtain_object_idr(&sem_ids(ns), id);
 	if (IS_ERR(ipcp))
 		return ERR_CAST(ipcp);
 
@@ -420,7 +427,7 @@ static inline struct sem_array *sem_obtain_lock(struct ipc_namespace *ns,
 
 static inline struct sem_array *sem_obtain_object(struct ipc_namespace *ns, int id)
 {
-	struct kern_ipc_perm *ipcp = ipc_obtain_object(&sem_ids(ns), id);
+	struct kern_ipc_perm *ipcp = ipc_obtain_object_idr(&sem_ids(ns), id);
 
 	if (IS_ERR(ipcp))
 		return ERR_CAST(ipcp);
@@ -1454,8 +1461,10 @@ static int semctl_main(struct ipc_namespace *ns, int semid, int semnum,
 			goto out_unlock;
 		}
 
-		for (i = 0; i < nsems; i++)
+		for (i = 0; i < nsems; i++) {
 			sma->sem_base[i].semval = sem_io[i];
+			sma->sem_base[i].sempid = task_tgid_vnr(current);
+		}
 
 		ipc_assert_locked_object(&sma->sem_perm);
 		list_for_each_entry(un, &sma->list_id, list_id) {
@@ -1503,7 +1512,7 @@ out_rcu_wakeup:
 	wake_up_sem_queue_do(&tasks);
 out_free:
 	if (sem_io != fast_sem_io)
-		ipc_free(sem_io, sizeof(ushort)*nsems);
+		ipc_free(sem_io);
 	return err;
 }
 
@@ -2143,9 +2152,11 @@ void exit_sem(struct task_struct *tsk)
 		ipc_assert_locked_object(&sma->sem_perm);
 		list_del(&un->list_id);
 
-		spin_lock(&ulp->lock);
+		/* we are the last process using this ulp, acquiring ulp->lock
+		 * isn't required. Besides that, we are also protected against
+		 * IPC_RMID as we hold sma->sem_perm lock now
+		 */
 		list_del_rcu(&un->list_proc);
-		spin_unlock(&ulp->lock);
 
 		/* perform adjustments registered in un */
 		for (i = 0; i < sma->sem_nsems; i++) {
