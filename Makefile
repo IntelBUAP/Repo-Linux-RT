@@ -1,8 +1,8 @@
 VERSION = 4
-PATCHLEVEL = 1
-SUBLEVEL = 15
-EXTRAVERSION =
-NAME = Series 4800
+PATCHLEVEL = 6
+SUBLEVEL = 0
+EXTRAVERSION = -rc7
+NAME = Charred Weasel
 
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
@@ -215,7 +215,6 @@ VPATH		:= $(srctree)$(if $(KBUILD_EXTMOD),:$(KBUILD_EXTMOD))
 
 export srctree objtree VPATH
 
-
 # SUBARCH tells the usermode build what the underlying arch is.  That is set
 # first, and if a usermode build is happening, the "ARCH=um" on the command
 # line overrides the setting of ARCH below.  If a native build is happening,
@@ -336,15 +335,6 @@ endif
 export KBUILD_MODULES KBUILD_BUILTIN
 export KBUILD_CHECKSRC KBUILD_SRC KBUILD_EXTMOD
 
-ifneq ($(CC),)
-ifeq ($(shell $(CC) -v 2>&1 | grep -c "clang version"), 1)
-COMPILER := clang
-else
-COMPILER := gcc
-endif
-export COMPILER
-endif
-
 # We need some generic definitions (do not try to remake the file).
 scripts/Kbuild.include: ;
 include scripts/Kbuild.include
@@ -375,6 +365,7 @@ LDFLAGS_MODULE  =
 CFLAGS_KERNEL	=
 AFLAGS_KERNEL	=
 CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage
+CFLAGS_KCOV	= -fsanitize-coverage=trace-pc
 
 
 # Use USERINCLUDE when you must reference the UAPI directories only.
@@ -421,7 +412,7 @@ export MAKE AWK GENKSYMS INSTALLKERNEL PERL PYTHON UTS_MACHINE
 export HOSTCXX HOSTCXXFLAGS LDFLAGS_MODULE CHECK CHECKFLAGS
 
 export KBUILD_CPPFLAGS NOSTDINC_FLAGS LINUXINCLUDE OBJCOPYFLAGS LDFLAGS
-export KBUILD_CFLAGS CFLAGS_KERNEL CFLAGS_MODULE CFLAGS_GCOV CFLAGS_KASAN
+export KBUILD_CFLAGS CFLAGS_KERNEL CFLAGS_MODULE CFLAGS_GCOV CFLAGS_KCOV CFLAGS_KASAN CFLAGS_UBSAN
 export KBUILD_AFLAGS AFLAGS_KERNEL AFLAGS_MODULE
 export KBUILD_AFLAGS_MODULE KBUILD_CFLAGS_MODULE KBUILD_LDFLAGS_MODULE
 export KBUILD_AFLAGS_KERNEL KBUILD_CFLAGS_KERNEL
@@ -505,6 +496,12 @@ ifeq ($(KBUILD_EXTMOD),)
                 endif
         endif
 endif
+# install and module_install need also be processed one by one
+ifneq ($(filter install,$(MAKECMDGOALS)),)
+        ifneq ($(filter modules_install,$(MAKECMDGOALS)),)
+	        mixed-targets := 1
+        endif
+endif
 
 ifeq ($(mixed-targets),1)
 # ===========================================================================
@@ -560,6 +557,7 @@ drivers-y	:= drivers/ sound/ firmware/
 net-y		:= net/
 libs-y		:= lib/
 core-y		:= usr/
+virt-y		:= virt/
 endif # KBUILD_EXTMOD
 
 ifeq ($(dot-config),1)
@@ -607,6 +605,11 @@ endif # $(dot-config)
 # Defaults to vmlinux, but the arch makefile usually adds further targets
 all: vmlinux
 
+# The arch Makefile can set ARCH_{CPP,A,C}FLAGS to override the default
+# values of the respective KBUILD_* variables
+ARCH_CPPFLAGS :=
+ARCH_AFLAGS :=
+ARCH_CFLAGS :=
 include arch/$(SRCARCH)/Makefile
 
 KBUILD_CFLAGS	+= $(call cc-option,-fno-delete-null-pointer-checks,)
@@ -671,7 +674,15 @@ endif
 endif
 KBUILD_CFLAGS += $(stackp-flag)
 
-ifeq ($(COMPILER),clang)
+ifdef CONFIG_KCOV
+  ifeq ($(call cc-option, $(CFLAGS_KCOV)),)
+    $(warning Cannot use CONFIG_KCOV: \
+             -fsanitize-coverage=trace-pc is not supported by compiler)
+    CFLAGS_KCOV =
+  endif
+endif
+
+ifeq ($(cc-name),clang)
 KBUILD_CPPFLAGS += $(call cc-option,-Qunused-arguments,)
 KBUILD_CPPFLAGS += $(call cc-option,-Wno-unknown-warning-option,)
 KBUILD_CFLAGS += $(call cc-disable-warning, unused-variable)
@@ -771,6 +782,9 @@ KBUILD_CFLAGS   += $(call cc-option,-Werror=strict-prototypes)
 # Prohibit date/time macros, which would make the build non-deterministic
 KBUILD_CFLAGS   += $(call cc-option,-Werror=date-time)
 
+# enforce correct pointer usage
+KBUILD_CFLAGS   += $(call cc-option,-Werror=incompatible-pointer-types)
+
 # use the deterministic mode of AR if available
 KBUILD_ARFLAGS := $(call ar-option,D)
 
@@ -782,6 +796,7 @@ endif
 
 include scripts/Makefile.kasan
 include scripts/Makefile.extrawarn
+include scripts/Makefile.ubsan
 
 # Add any arch overrides and user supplied CPPFLAGS, AFLAGS and CFLAGS as the
 # last assignments
@@ -851,10 +866,10 @@ export mod_strip_cmd
 mod_compress_cmd = true
 ifdef CONFIG_MODULE_COMPRESS
   ifdef CONFIG_MODULE_COMPRESS_GZIP
-    mod_compress_cmd = gzip -n
+    mod_compress_cmd = gzip -n -f
   endif # CONFIG_MODULE_COMPRESS_GZIP
   ifdef CONFIG_MODULE_COMPRESS_XZ
-    mod_compress_cmd = xz
+    mod_compress_cmd = xz -f
   endif # CONFIG_MODULE_COMPRESS_XZ
 endif # CONFIG_MODULE_COMPRESS
 export mod_compress_cmd
@@ -873,10 +888,9 @@ INITRD_COMPRESS-$(CONFIG_RD_LZ4)   := lz4
 # export INITRD_COMPRESS := $(INITRD_COMPRESS-y)
 
 ifdef CONFIG_MODULE_SIG_ALL
-MODSECKEY = ./signing_key.priv
-MODPUBKEY = ./signing_key.x509
-export MODPUBKEY
-mod_sign_cmd = perl $(srctree)/scripts/sign-file $(CONFIG_MODULE_SIG_HASH) $(MODSECKEY) $(MODPUBKEY)
+$(eval $(call config_filename,MODULE_SIG_KEY))
+
+mod_sign_cmd = scripts/sign-file $(CONFIG_MODULE_SIG_HASH) $(MODULE_SIG_KEY_SRCPREFIX)$(CONFIG_MODULE_SIG_KEY) certs/signing_key.x509
 else
 mod_sign_cmd = true
 endif
@@ -884,14 +898,14 @@ export mod_sign_cmd
 
 
 ifeq ($(KBUILD_EXTMOD),)
-core-y		+= kernel/ mm/ fs/ ipc/ security/ crypto/ block/
+core-y		+= kernel/ certs/ mm/ fs/ ipc/ security/ crypto/ block/
 
 vmlinux-dirs	:= $(patsubst %/,%,$(filter %/, $(init-y) $(init-m) \
 		     $(core-y) $(core-m) $(drivers-y) $(drivers-m) \
-		     $(net-y) $(net-m) $(libs-y) $(libs-m)))
+		     $(net-y) $(net-m) $(libs-y) $(libs-m) $(virt-y)))
 
 vmlinux-alldirs	:= $(sort $(vmlinux-dirs) $(patsubst %/,%,$(filter %/, \
-		     $(init-) $(core-) $(drivers-) $(net-) $(libs-))))
+		     $(init-) $(core-) $(drivers-) $(net-) $(libs-) $(virt-))))
 
 init-y		:= $(patsubst %/, %/built-in.o, $(init-y))
 core-y		:= $(patsubst %/, %/built-in.o, $(core-y))
@@ -900,14 +914,15 @@ net-y		:= $(patsubst %/, %/built-in.o, $(net-y))
 libs-y1		:= $(patsubst %/, %/lib.a, $(libs-y))
 libs-y2		:= $(patsubst %/, %/built-in.o, $(libs-y))
 libs-y		:= $(libs-y1) $(libs-y2)
+virt-y		:= $(patsubst %/, %/built-in.o, $(virt-y))
 
 # Externally visible symbols (used by link-vmlinux.sh)
 export KBUILD_VMLINUX_INIT := $(head-y) $(init-y)
-export KBUILD_VMLINUX_MAIN := $(core-y) $(libs-y) $(drivers-y) $(net-y)
+export KBUILD_VMLINUX_MAIN := $(core-y) $(libs-y) $(drivers-y) $(net-y) $(virt-y)
 export KBUILD_LDS          := arch/$(SRCARCH)/kernel/vmlinux.lds
 export LDFLAGS_vmlinux
 # used by scripts/pacmage/Makefile
-export KBUILD_ALLDIRS := $(sort $(filter-out arch/%,$(vmlinux-alldirs)) arch Documentation include samples scripts tools virt)
+export KBUILD_ALLDIRS := $(sort $(filter-out arch/%,$(vmlinux-alldirs)) arch Documentation include samples scripts tools)
 
 vmlinux-deps := $(KBUILD_LDS) $(KBUILD_VMLINUX_INIT) $(KBUILD_VMLINUX_MAIN)
 
@@ -990,7 +1005,22 @@ prepare0: archprepare FORCE
 	$(Q)$(MAKE) $(build)=.
 
 # All the preparing..
-prepare: prepare0
+prepare: prepare0 prepare-objtool
+
+ifdef CONFIG_STACK_VALIDATION
+  has_libelf := $(call try-run,\
+		echo "int main() {}" | $(HOSTCC) -xc -o /dev/null -lelf -,1,0)
+  ifeq ($(has_libelf),1)
+    objtool_target := tools/objtool FORCE
+  else
+    $(warning "Cannot use CONFIG_STACK_VALIDATION, please install libelf-dev or elfutils-libelf-devel")
+    SKIP_STACK_VALIDATION := 1
+    export SKIP_STACK_VALIDATION
+  endif
+endif
+
+PHONY += prepare-objtool
+prepare-objtool: $(objtool_target)
 
 # Generate some files
 # ---------------------------------------------------------------------------
@@ -1080,6 +1110,17 @@ headers_check: headers_install
 PHONY += kselftest
 kselftest:
 	$(Q)$(MAKE) -C tools/testing/selftests run_tests
+
+kselftest-clean:
+	$(Q)$(MAKE) -C tools/testing/selftests clean
+
+PHONY += kselftest-merge
+kselftest-merge:
+	$(if $(wildcard $(objtree)/.config),, $(error No .config exists, config your kernel first!))
+	$(Q)$(CONFIG_SHELL) $(srctree)/scripts/kconfig/merge_config.sh \
+		-m $(objtree)/.config \
+		$(srctree)/tools/testing/selftests/*/config
+	+$(Q)$(MAKE) -f $(srctree)/Makefile olddefconfig
 
 # ---------------------------------------------------------------------------
 # Modules
@@ -1176,8 +1217,8 @@ MRPROPER_DIRS  += include/config usr/include include/generated          \
 		  arch/*/include/generated .tmp_objdiff
 MRPROPER_FILES += .config .config.old .version .old_version \
 		  Module.symvers tags TAGS cscope* GPATH GTAGS GRTAGS GSYMS \
-		  signing_key.priv signing_key.x509 x509.genkey		\
-		  extra_certificates signing_key.x509.keyid		\
+		  signing_key.pem signing_key.priv signing_key.x509	\
+		  x509.genkey extra_certificates signing_key.x509.keyid	\
 		  signing_key.x509.signer vmlinux-gdb.py
 
 # clean - Delete most, but leave enough to build external modules
@@ -1260,7 +1301,7 @@ help:
 	@echo  '  firmware_install- Install all firmware to INSTALL_FW_PATH'
 	@echo  '                    (default: $$(INSTALL_MOD_PATH)/lib/firmware)'
 	@echo  '  dir/            - Build all files in dir and below'
-	@echo  '  dir/file.[oisS] - Build specified target only'
+	@echo  '  dir/file.[ois]  - Build specified target only'
 	@echo  '  dir/file.lst    - Build specified mixed source/assembly target only'
 	@echo  '                    (requires a recent binutils and recent build (System.map))'
 	@echo  '  dir/file.ko     - Build module including final link'
@@ -1288,6 +1329,9 @@ help:
 	@echo  '  kselftest       - Build and run kernel selftest (run as root)'
 	@echo  '                    Build, install, and boot kernel before'
 	@echo  '                    running kselftest on it'
+	@echo  '  kselftest-clean - Remove all generated kselftest files'
+	@echo  '  kselftest-merge - Merge all the config dependencies of kselftest to existed'
+	@echo  '                    .config.'
 	@echo  ''
 	@echo  'Kernel packaging:'
 	@$(MAKE) $(build)=$(package-dir) help
@@ -1342,7 +1386,7 @@ $(help-board-dirs): help-%:
 # Documentation targets
 # ---------------------------------------------------------------------------
 %docs: scripts_basic FORCE
-	$(Q)$(MAKE) $(build)=scripts build_docproc
+	$(Q)$(MAKE) $(build)=scripts build_docproc build_check-lc_ctype
 	$(Q)$(MAKE) $(build)=Documentation/DocBook $@
 
 else # KBUILD_EXTMOD
@@ -1431,6 +1475,7 @@ clean: $(clean-dirs)
 		\( -name '*.[oas]' -o -name '*.ko' -o -name '.*.cmd' \
 		-o -name '*.ko.*' \
 		-o -name '*.dwo'  \
+		-o -name '*.su'  \
 		-o -name '.*.d' -o -name '.*.tmp' -o -name '*.mod.c' \
 		-o -name '*.symtypes' -o -name 'modules.order' \
 		-o -name modules.builtin -o -name '.tmp_*.o.*' \
@@ -1498,11 +1543,11 @@ image_name:
 # Clear a bunch of variables before executing the submake
 tools/: FORCE
 	$(Q)mkdir -p $(objtree)/tools
-	$(Q)$(MAKE) LDFLAGS= MAKEFLAGS="$(filter --j% -j,$(MAKEFLAGS))" O=$(objtree) subdir=tools -C $(src)/tools/
+	$(Q)$(MAKE) LDFLAGS= MAKEFLAGS="$(filter --j% -j,$(MAKEFLAGS))" O=$(shell cd $(objtree) && /bin/pwd) subdir=tools -C $(src)/tools/
 
 tools/%: FORCE
 	$(Q)mkdir -p $(objtree)/tools
-	$(Q)$(MAKE) LDFLAGS= MAKEFLAGS="$(filter --j% -j,$(MAKEFLAGS))" O=$(objtree) subdir=tools -C $(src)/tools/ $*
+	$(Q)$(MAKE) LDFLAGS= MAKEFLAGS="$(filter --j% -j,$(MAKEFLAGS))" O=$(shell cd $(objtree) && /bin/pwd) subdir=tools -C $(src)/tools/ $*
 
 # Single targets
 # ---------------------------------------------------------------------------
