@@ -2,7 +2,6 @@
 #define _LINUX_BH_H
 
 #include <linux/preempt.h>
-#include <linux/preempt_mask.h>
 
 #ifdef CONFIG_PREEMPT_RT_FULL
 

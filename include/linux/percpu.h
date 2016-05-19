@@ -18,26 +18,20 @@
 #define PERCPU_MODULE_RESERVE		0
 #endif
 
-#ifndef PERCPU_ENOUGH_ROOM
-#define PERCPU_ENOUGH_ROOM						\
-	(ALIGN(__per_cpu_end - __per_cpu_start, SMP_CACHE_BYTES) +	\
-	 PERCPU_MODULE_RESERVE)
-#endif
-
 #ifdef CONFIG_PREEMPT_RT_FULL
 
-#define get_local_var(var) (*({		\
-	       migrate_disable();	\
-	       this_cpu_ptr(&var);	}))
+#define get_local_var(var) (*({	\
+	migrate_disable();	\
+	this_cpu_ptr(&var);	}))
 
 #define put_local_var(var) do {	\
 	(void)&(var);		\
 	migrate_enable();	\
 } while (0)
 
-# define get_local_ptr(var) ({		\
-		migrate_disable();	\
-		this_cpu_ptr(var);	})
+# define get_local_ptr(var) ({	\
+	migrate_disable();	\
+	this_cpu_ptr(var);	})
 
 # define put_local_ptr(var) do {	\
 	(void)(var);			\

@@ -28,6 +28,6 @@ typedef struct {
 	  RW_DEP_MAP_INIT(name) }
 
 #define DEFINE_RWLOCK(name) \
-	rwlock_t name __cacheline_aligned_in_smp = __RW_LOCK_UNLOCKED(name)
+	rwlock_t name = __RW_LOCK_UNLOCKED(name)
 
 #endif

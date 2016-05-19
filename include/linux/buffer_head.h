@@ -43,7 +43,7 @@ enum bh_state_bits {
 			 */
 };
 
-#define MAX_BUF_PER_PAGE (PAGE_CACHE_SIZE / 512)
+#define MAX_BUF_PER_PAGE (PAGE_SIZE / 512)
 
 struct page;
 struct buffer_head;
@@ -77,8 +77,7 @@ struct buffer_head {
 	atomic_t b_count;		/* users using this buffer_head */
 #ifdef CONFIG_PREEMPT_RT_BASE
 	spinlock_t b_uptodate_lock;
-#if defined(CONFIG_JBD) || defined(CONFIG_JBD_MODULE) || \
-	defined(CONFIG_JBD2) || defined(CONFIG_JBD2_MODULE)
+#if IS_ENABLED(CONFIG_JBD2)
 	spinlock_t b_state_lock;
 	spinlock_t b_journal_head_lock;
 #endif
@@ -113,8 +112,7 @@ static inline void buffer_head_init_locks(struct buffer_head *bh)
 {
 #ifdef CONFIG_PREEMPT_RT_BASE
 	spin_lock_init(&bh->b_uptodate_lock);
-#if defined(CONFIG_JBD) || defined(CONFIG_JBD_MODULE) || \
-	defined(CONFIG_JBD2) || defined(CONFIG_JBD2_MODULE)
+#if IS_ENABLED(CONFIG_JBD2)
 	spin_lock_init(&bh->b_state_lock);
 	spin_lock_init(&bh->b_journal_head_lock);
 #endif
@@ -126,15 +124,15 @@ static inline void buffer_head_init_locks(struct buffer_head *bh)
  * and buffer_foo() functions.
  */
 #define BUFFER_FNS(bit, name)						\
-static inline void set_buffer_##name(struct buffer_head *bh)		\
+static __always_inline void set_buffer_##name(struct buffer_head *bh)	\
 {									\
 	set_bit(BH_##bit, &(bh)->b_state);				\
 }									\
-static inline void clear_buffer_##name(struct buffer_head *bh)		\
+static __always_inline void clear_buffer_##name(struct buffer_head *bh)	\
 {									\
 	clear_bit(BH_##bit, &(bh)->b_state);				\
 }									\
-static inline int buffer_##name(const struct buffer_head *bh)		\
+static __always_inline int buffer_##name(const struct buffer_head *bh)	\
 {									\
 	return test_bit(BH_##bit, &(bh)->b_state);			\
 }
@@ -143,11 +141,11 @@ static inline int buffer_##name(const struct buffer_head *bh)		\
  * test_set_buffer_foo() and test_clear_buffer_foo()
  */
 #define TAS_BUFFER_FNS(bit, name)					\
-static inline int test_set_buffer_##name(struct buffer_head *bh)	\
+static __always_inline int test_set_buffer_##name(struct buffer_head *bh) \
 {									\
 	return test_and_set_bit(BH_##bit, &(bh)->b_state);		\
 }									\
-static inline int test_clear_buffer_##name(struct buffer_head *bh)	\
+static __always_inline int test_clear_buffer_##name(struct buffer_head *bh) \
 {									\
 	return test_and_clear_bit(BH_##bit, &(bh)->b_state);		\
 }									\
@@ -271,8 +269,6 @@ int cont_write_begin(struct file *, struct address_space *, loff_t,
 			get_block_t *, loff_t *);
 int generic_cont_expand_simple(struct inode *inode, loff_t size);
 int block_commit_write(struct page *page, unsigned from, unsigned to);
-int __block_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf,
-				get_block_t get_block);
 int block_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf,
 				get_block_t get_block);
 /* Convert errno to return value from ->page_mkwrite() call */
@@ -309,7 +305,7 @@ void buffer_init(void);
 static inline void attach_page_buffers(struct page *page,
 		struct buffer_head *head)
 {
-	page_cache_get(page);
+	get_page(page);
 	SetPagePrivate(page);
 	set_page_private(page, (unsigned long)head);
 }

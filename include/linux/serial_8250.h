@@ -12,6 +12,7 @@
 #define _LINUX_SERIAL_8250_H
 
 #include <linux/serial_core.h>
+#include <linux/serial_reg.h>
 #include <linux/platform_device.h>
 
 /*
@@ -75,6 +76,12 @@ struct uart_8250_ops {
 	void		(*release_irq)(struct uart_8250_port *);
 };
 
+struct uart_8250_em485 {
+	struct timer_list	start_tx_timer; /* "rs485 start tx" timer */
+	struct timer_list	stop_tx_timer;  /* "rs485 stop tx" timer */
+	struct timer_list	*active_timer;  /* pointer to active timer */
+};
+
 /*
  * This should be used by drivers which want to register
  * their own 8250 ports without registering their own
@@ -121,6 +128,8 @@ struct uart_8250_port {
 	/* 8250 specific callbacks */
 	int			(*dl_read)(struct uart_8250_port *);
 	void			(*dl_write)(struct uart_8250_port *, int);
+
+	struct uart_8250_em485 *em485;
 };
 
 static inline struct uart_8250_port *up_to_u8250p(struct uart_port *up)
@@ -135,8 +144,8 @@ void serial8250_resume_port(int line);
 
 extern int early_serial_setup(struct uart_port *port);
 
-extern unsigned int serial8250_early_in(struct uart_port *port, int offset);
-extern void serial8250_early_out(struct uart_port *port, int offset, int value);
+extern int early_serial8250_setup(struct earlycon_device *device,
+					 const char *options);
 extern void serial8250_do_set_termios(struct uart_port *port,
 		struct ktermios *termios, struct ktermios *old);
 extern int serial8250_do_startup(struct uart_port *port);
@@ -149,6 +158,11 @@ int serial8250_handle_irq(struct uart_port *port, unsigned int iir);
 unsigned char serial8250_rx_chars(struct uart_8250_port *up, unsigned char lsr);
 void serial8250_tx_chars(struct uart_8250_port *up);
 unsigned int serial8250_modem_status(struct uart_8250_port *up);
+void serial8250_init_port(struct uart_8250_port *up);
+void serial8250_set_defaults(struct uart_8250_port *up);
+void serial8250_console_write(struct uart_8250_port *up, const char *s,
+			      unsigned int count);
+int serial8250_console_setup(struct uart_port *port, char *options, bool probe);
 
 extern void serial8250_set_isa_configurator(void (*v)
 					(int port, struct uart_port *up,
