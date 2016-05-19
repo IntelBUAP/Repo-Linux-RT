@@ -16,6 +16,7 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <poll.h>
+#include <ctype.h>
 #include "libbpf.h"
 #include "bpf_helpers.h"
 #include "bpf_load.h"
@@ -29,6 +30,19 @@ int map_fd[MAX_MAPS];
 int prog_fd[MAX_PROGS];
 int event_fd[MAX_PROGS];
 int prog_cnt;
+int prog_array_fd = -1;
+
+static int populate_prog_array(const char *event, int prog_fd)
+{
+	int ind = atoi(event), err;
+
+	err = bpf_update_elem(prog_array_fd, &ind, &prog_fd, BPF_ANY);
+	if (err < 0) {
+		printf("failed to store prog_fd in prog_array\n");
+		return -1;
+	}
+	return 0;
+}
 
 static int load_and_attach(const char *event, struct bpf_insn *prog, int size)
 {
@@ -54,11 +68,39 @@ static int load_and_attach(const char *event, struct bpf_insn *prog, int size)
 		return -1;
 	}
 
+	fd = bpf_prog_load(prog_type, prog, size, license, kern_version);
+	if (fd < 0) {
+		printf("bpf_prog_load() err=%d\n%s", errno, bpf_log_buf);
+		return -1;
+	}
+
+	prog_fd[prog_cnt++] = fd;
+
+	if (is_socket) {
+		event += 6;
+		if (*event != '/')
+			return 0;
+		event++;
+		if (!isdigit(*event)) {
+			printf("invalid prog number\n");
+			return -1;
+		}
+		return populate_prog_array(event, fd);
+	}
+
 	if (is_kprobe || is_kretprobe) {
 		if (is_kprobe)
 			event += 7;
 		else
 			event += 10;
+
+		if (*event == 0) {
+			printf("event name cannot be empty\n");
+			return -1;
+		}
+
+		if (isdigit(*event))
+			return populate_prog_array(event, fd);
 
 		snprintf(buf, sizeof(buf),
 			 "echo '%c:%s %s' >> /sys/kernel/debug/tracing/kprobe_events",
@@ -70,18 +112,6 @@ static int load_and_attach(const char *event, struct bpf_insn *prog, int size)
 			return -1;
 		}
 	}
-
-	fd = bpf_prog_load(prog_type, prog, size, license, kern_version);
-
-	if (fd < 0) {
-		printf("bpf_prog_load() err=%d\n%s", errno, bpf_log_buf);
-		return -1;
-	}
-
-	prog_fd[prog_cnt++] = fd;
-
-	if (is_socket)
-		return 0;
 
 	strcpy(buf, DEBUGFS);
 	strcat(buf, "events/kprobes/");
@@ -127,9 +157,16 @@ static int load_maps(struct bpf_map_def *maps, int len)
 		map_fd[i] = bpf_create_map(maps[i].type,
 					   maps[i].key_size,
 					   maps[i].value_size,
-					   maps[i].max_entries);
-		if (map_fd[i] < 0)
+					   maps[i].max_entries,
+					   maps[i].map_flags);
+		if (map_fd[i] < 0) {
+			printf("failed to create a map: %d %s\n",
+			       errno, strerror(errno));
 			return 1;
+		}
+
+		if (maps[i].type == BPF_MAP_TYPE_PROG_ARRAY)
+			prog_array_fd = map_fd[i];
 	}
 	return 0;
 }
@@ -309,4 +346,66 @@ void read_trace_pipe(void)
 			puts(buf);
 		}
 	}
+}
+
+#define MAX_SYMS 300000
+static struct ksym syms[MAX_SYMS];
+static int sym_cnt;
+
+static int ksym_cmp(const void *p1, const void *p2)
+{
+	return ((struct ksym *)p1)->addr - ((struct ksym *)p2)->addr;
+}
+
+int load_kallsyms(void)
+{
+	FILE *f = fopen("/proc/kallsyms", "r");
+	char func[256], buf[256];
+	char symbol;
+	void *addr;
+	int i = 0;
+
+	if (!f)
+		return -ENOENT;
+
+	while (!feof(f)) {
+		if (!fgets(buf, sizeof(buf), f))
+			break;
+		if (sscanf(buf, "%p %c %s", &addr, &symbol, func) != 3)
+			break;
+		if (!addr)
+			continue;
+		syms[i].addr = (long) addr;
+		syms[i].name = strdup(func);
+		i++;
+	}
+	sym_cnt = i;
+	qsort(syms, sym_cnt, sizeof(struct ksym), ksym_cmp);
+	return 0;
+}
+
+struct ksym *ksym_search(long key)
+{
+	int start = 0, end = sym_cnt;
+	int result;
+
+	while (start < end) {
+		size_t mid = start + (end - start) / 2;
+
+		result = key - syms[mid].addr;
+		if (result < 0)
+			end = mid;
+		else if (result > 0)
+			start = mid + 1;
+		else
+			return &syms[mid];
+	}
+
+	if (start >= 1 && syms[start - 1].addr < key &&
+	    key < syms[start].addr)
+		/* valid ksym */
+		return &syms[start - 1];
+
+	/* out of range. return _stext */
+	return &syms[0];
 }
