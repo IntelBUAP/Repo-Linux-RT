@@ -245,7 +245,15 @@ void *trace_event_buffer_reserve(struct trace_event_buffer *fbuffer,
 		return NULL;
 
 	local_save_flags(fbuffer->flags);
-	fbuffer->pc = event_preempt_count();
+	fbuffer->pc = preempt_count();
+	/*
+	 * If CONFIG_PREEMPT is enabled, then the tracepoint itself disables
+	 * preemption (adding one to the preempt_count). Since we are
+	 * interested in the preempt_count at the time the tracepoint was
+	 * hit, we need to subtract one to offset the increment.
+	 */
+	if (IS_ENABLED(CONFIG_PREEMPT))
+		fbuffer->pc--;
 	fbuffer->trace_file = trace_file;
 
 	fbuffer->event =
