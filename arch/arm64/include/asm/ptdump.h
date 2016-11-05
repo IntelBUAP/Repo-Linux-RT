@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 ARM Ltd.
+ * Copyright (C) 2014 ARM Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -13,7 +13,32 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+#ifndef __ASM_PTDUMP_H
+#define __ASM_PTDUMP_H
 
-#define __ARCH_WANT_RENAMEAT
+#ifdef CONFIG_ARM64_PTDUMP
 
-#include <asm-generic/unistd.h>
+#include <linux/mm_types.h>
+
+struct addr_marker {
+	unsigned long start_address;
+	char *name;
+};
+
+struct ptdump_info {
+	struct mm_struct		*mm;
+	const struct addr_marker	*markers;
+	unsigned long			base_addr;
+	unsigned long			max_addr;
+};
+
+int ptdump_register(struct ptdump_info *info, const char *name);
+
+#else
+static inline int ptdump_register(struct ptdump_info *info, const char *name)
+{
+	return 0;
+}
+#endif /* CONFIG_ARM64_PTDUMP */
+
+#endif /* __ASM_PTDUMP_H */
