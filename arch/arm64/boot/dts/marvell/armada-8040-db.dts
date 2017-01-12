@@ -1,12 +1,8 @@
 /*
- * Device Tree file for Freescale LS2085a software Simulator model
- *
- * Copyright (C) 2014, Freescale Semiconductor
- *
- * Bhupesh Sharma <bhupesh.sharma@freescale.com>
+ * Copyright (C) 2016 Marvell Technology Group Ltd.
  *
  * This file is dual-licensed: you can use it either under the terms
- * of the GPL or the X11 license, at your option. Note that this dual
+ * of the GPLv2 or the X11 license, at your option. Note that this dual
  * licensing only applies to this file, and not this project as a
  * whole.
  *
@@ -19,11 +15,6 @@
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- *
- *     You should have received a copy of the GNU General Public
- *     License along with this library; if not, write to the Free
- *     Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
- *     MA 02110-1301 USA
  *
  * Or, alternatively,
  *
@@ -49,17 +40,111 @@
  *     OTHER DEALINGS IN THE SOFTWARE.
  */
 
-/dts-v1/;
+/*
+ * Device Tree file for Marvell Armada 8040 Development board platform
+ */
 
-/include/ "fsl-ls2085a.dtsi"
+#include "armada-8040.dtsi"
 
 / {
-	model = "Freescale Layerscape 2085a software Simulator model";
-	compatible = "fsl,ls2085a-simu", "fsl,ls2085a";
+	model = "Marvell Armada 8040 DB board";
+	compatible = "marvell,armada8040-db", "marvell,armada8040",
+		     "marvell,armada-ap806-quad", "marvell,armada-ap806";
 
-	ethernet@2210000 {
-		compatible = "smsc,lan91c111";
-		reg = <0x0 0x2210000 0x0 0x100>;
-		interrupts = <0 58 0x1>;
+	chosen {
+		stdout-path = "serial0:115200n8";
 	};
+
+	memory@00000000 {
+		device_type = "memory";
+		reg = <0x0 0x0 0x0 0x80000000>;
+	};
+};
+
+&i2c0 {
+	status = "okay";
+	clock-frequency = <100000>;
+};
+
+&spi0 {
+	status = "okay";
+
+	spi-flash@0 {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <10000000>;
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			partition@0 {
+				label = "U-Boot";
+				reg = <0 0x200000>;
+			};
+			partition@400000 {
+				label = "Filesystem";
+				reg = <0x200000 0xce0000>;
+			};
+		};
+	};
+};
+
+/* Accessible over the mini-USB CON9 connector on the main board */
+&uart0 {
+	status = "okay";
+};
+
+
+/* CON5 on CP0 expansion */
+&cpm_pcie2 {
+	status = "okay";
+};
+
+&cpm_i2c0 {
+	status = "okay";
+	clock-frequency = <100000>;
+};
+
+/* CON4 on CP0 expansion */
+&cpm_sata0 {
+	status = "okay";
+};
+
+/* CON9 on CP0 expansion */
+&cpm_usb3_0 {
+	status = "okay";
+};
+
+/* CON10 on CP0 expansion */
+&cpm_usb3_1 {
+	status = "okay";
+};
+
+/* CON5 on CP1 expansion */
+&cps_pcie2 {
+	status = "okay";
+};
+
+&cps_i2c0 {
+	status = "okay";
+	clock-frequency = <100000>;
+};
+
+/* CON4 on CP1 expansion */
+&cps_sata0 {
+	status = "okay";
+};
+
+/* CON9 on CP1 expansion */
+&cps_usb3_0 {
+	status = "okay";
+};
+
+/* CON10 on CP1 expansion */
+&cps_usb3_1 {
+	status = "okay";
 };

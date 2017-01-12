@@ -1,8 +1,8 @@
 /*
- * Device Tree Source for RK3368 SoC thermal
+ * Device Tree Source for UniPhier LD11 Reference Board
  *
- * Copyright (c) 2015, Fuzhou Rockchip Electronics Co., Ltd
- * Caesar Wang <wxt@rock-chips.com>
+ * Copyright (C) 2016 Socionext Inc.
+ *   Author: Masahiro Yamada <yamada.masahiro@socionext.com>
  *
  * This file is dual-licensed: you can use it either under the terms
  * of the GPL or the X11 license, at your option. Note that this dual
@@ -43,70 +43,58 @@
  *     OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include <dt-bindings/thermal/thermal.h>
+/dts-v1/;
+/include/ "uniphier-ld11.dtsi"
+/include/ "uniphier-ref-daughter.dtsi"
+/include/ "uniphier-support-card.dtsi"
 
-cpu_thermal: cpu_thermal {
-	polling-delay-passive = <100>; /* milliseconds */
-	polling-delay = <5000>; /* milliseconds */
+/ {
+	model = "UniPhier LD11 Reference Board";
+	compatible = "socionext,uniphier-ld11-ref", "socionext,uniphier-ld11";
 
-	thermal-sensors = <&tsadc 0>;
-
-	trips {
-		cpu_alert0: cpu_alert0 {
-			temperature = <75000>; /* millicelsius */
-			hysteresis = <2000>; /* millicelsius */
-			type = "passive";
-		};
-		cpu_alert1: cpu_alert1 {
-			temperature = <80000>; /* millicelsius */
-			hysteresis = <2000>; /* millicelsius */
-			type = "passive";
-		};
-		cpu_crit: cpu_crit {
-			temperature = <95000>; /* millicelsius */
-			hysteresis = <2000>; /* millicelsius */
-			type = "critical";
-		};
+	memory {
+		device_type = "memory";
+		reg = <0 0x80000000 0 0x40000000>;
 	};
 
-	cooling-maps {
-		map0 {
-			trip = <&cpu_alert0>;
-			cooling-device =
-				<&cpu_b0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
-		};
-		map1 {
-			trip = <&cpu_alert1>;
-			cooling-device =
-				<&cpu_l0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
-		};
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+
+	aliases {
+		serial0 = &serial0;
+		serial1 = &serial1;
+		serial2 = &serial2;
+		serial3 = &serial3;
+		i2c0 = &i2c0;
+		i2c1 = &i2c1;
+		i2c2 = &i2c2;
+		i2c3 = &i2c3;
+		i2c4 = &i2c4;
+		i2c5 = &i2c5;
 	};
 };
 
-gpu_thermal: gpu_thermal {
-	polling-delay-passive = <100>; /* milliseconds */
-	polling-delay = <5000>; /* milliseconds */
+&ethsc {
+	interrupts = <0 48 4>;
+};
 
-	thermal-sensors = <&tsadc 1>;
+&serial0 {
+	status = "okay";
+};
 
-	trips {
-		gpu_alert0: gpu_alert0 {
-			temperature = <80000>; /* millicelsius */
-			hysteresis = <2000>; /* millicelsius */
-			type = "passive";
-		};
-		gpu_crit: gpu_crit {
-			temperature = <1150000>; /* millicelsius */
-			hysteresis = <2000>; /* millicelsius */
-			type = "critical";
-		};
-	};
+&i2c0 {
+	status = "okay";
+};
 
-	cooling-maps {
-		map0 {
-			trip = <&gpu_alert0>;
-			cooling-device =
-				<&cpu_b0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
-		};
-	};
+&usb0 {
+	status = "okay";
+};
+
+&usb1 {
+	status = "okay";
+};
+
+&usb2 {
+	status = "okay";
 };
