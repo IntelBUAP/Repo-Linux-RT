@@ -76,6 +76,9 @@ static inline struct thread_info *current_thread_info(void) __attribute_const__;
 
 /*
  * struct thread_info can be accessed directly via sp_el0.
+ *
+ * We don't use read_sysreg() as we want the compiler to cache the value where
+ * possible.
  */
 static inline struct thread_info *current_thread_info(void)
 {
@@ -137,6 +140,7 @@ static inline struct thread_info *current_thread_info(void)
 #define _TIF_WORK_MASK		(_TIF_NEED_RESCHED | _TIF_SIGPENDING | \
 				 _TIF_NOTIFY_RESUME | _TIF_FOREIGN_FPSTATE | \
 				 _TIF_NEED_RESCHED_LAZY)
+#define _TIF_NEED_RESCHED_MASK	(_TIF_NEED_RESCHED | _TIF_NEED_RESCHED_LAZY)
 
 #define _TIF_SYSCALL_WORK	(_TIF_SYSCALL_TRACE | _TIF_SYSCALL_AUDIT | \
 				 _TIF_SYSCALL_TRACEPOINT | _TIF_SECCOMP | \
